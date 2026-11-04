@@ -1,0 +1,178 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Blueprint: UserProfile (/users/{userId})
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'email', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'email', 'photoURL', 'createdAt', 'updatedAt']) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid && data.uid == userId &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1024)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    // Validation Blueprint: ChatSession (/users/{userId}/sessions/{sessionId})
+    function isValidChatSession(data, userId, sessionId) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'title', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.id == sessionId &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 && data.userId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.userId == request.auth.uid && data.userId == userId &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    // Validation Blueprint: ChatMessage (/users/{userId}/sessions/{sessionId}/messages/{messageId})
+    function isValidChatMessage(data, userId, sessionId, messageId) {
+      return data.keys().hasAll(['id', 'sessionId', 'userId', 'role', 'text', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'sessionId', 'userId', 'role', 'text', 'attachmentNames', 'createdAt', 'updatedAt']) &&
+        data.id is string && data.id.size() >= 1 && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.id == messageId &&
+        data.sessionId is string && data.sessionId.size() >= 1 && data.sessionId.size() <= 128 && data.sessionId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.sessionId == sessionId &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 && data.userId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.userId == request.auth.uid && data.userId == userId &&
+        data.role is string && data.role.size() >= 4 && data.role.size() <= 10 &&
+        (data.role == 'user' || data.role == 'model') &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 50000 &&
+        (!('attachmentNames' in data) || (
+          data.attachmentNames is list &&
+          data.attachmentNames.size() <= 5 &&
+          (data.attachmentNames.size() == 0 || (data.attachmentNames[0] is string && data.attachmentNames[0].size() <= 200))
+        )) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        data.updatedAt == request.time;
+    }
+
+    // Collection: /users/{userId} (PII Isolated to Owner Only)
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().createdAt == request.time;
+
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'email', 'photoURL', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Subcollection: /users/{userId}/sessions/{sessionId}
+      match /sessions/{sessionId} {
+        allow get: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(sessionId) &&
+          existing().userId == request.auth.uid;
+
+        allow list: if isOwner(userId) &&
+          existing().userId == request.auth.uid;
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(sessionId) &&
+          isValidChatSession(incoming(), userId, sessionId) &&
+          incoming().createdAt == request.time;
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(sessionId) &&
+          isValidChatSession(incoming(), userId, sessionId) &&
+          incoming().id == existing().id &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt']);
+
+        allow delete: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(sessionId) &&
+          existing().userId == request.auth.uid;
+
+        // Subcollection: /users/{userId}/sessions/{sessionId}/messages/{messageId}
+        match /messages/{messageId} {
+          allow get: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(sessionId) &&
+            isValidId(messageId) &&
+            existing().userId == request.auth.uid &&
+            get(/databases/$(database)/documents/users/$(userId)/sessions/$(sessionId)).data.userId == request.auth.uid;
+
+          allow list: if isOwner(userId) &&
+            existing().userId == request.auth.uid;
+
+          allow create: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(sessionId) &&
+            isValidId(messageId) &&
+            isValidChatMessage(incoming(), userId, sessionId, messageId) &&
+            incoming().createdAt == request.time &&
+            get(/databases/$(database)/documents/users/$(userId)/sessions/$(sessionId)).data.userId == request.auth.uid;
+
+          allow update: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(sessionId) &&
+            isValidId(messageId) &&
+            isValidChatMessage(incoming(), userId, sessionId, messageId) &&
+            incoming().id == existing().id &&
+            incoming().sessionId == existing().sessionId &&
+            incoming().userId == existing().userId &&
+            incoming().role == existing().role &&
+            incoming().createdAt == existing().createdAt &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['text', 'attachmentNames', 'updatedAt']) &&
+            get(/databases/$(database)/documents/users/$(userId)/sessions/$(sessionId)).data.userId == request.auth.uid;
+
+          allow delete: if isOwner(userId) &&
+            isValidId(userId) &&
+            isValidId(sessionId) &&
+            isValidId(messageId) &&
+            existing().userId == request.auth.uid &&
+            get(/databases/$(database)/documents/users/$(userId)/sessions/$(sessionId)).data.userId == request.auth.uid;
+        }
+      }
+    }
+  }
+}

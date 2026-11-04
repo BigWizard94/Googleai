@@ -1,4 +1,4 @@
-import { Message } from '../types';
+import { DriveAttachment, Message } from '../types';
 
 export const PRO_MODEL = 'gemini-3.1-pro-preview';
 export const FLASH_LITE_MODEL = 'gemini-3.1-flash-lite-preview';
@@ -6,14 +6,25 @@ export const FLASH_LITE_MODEL = 'gemini-3.1-flash-lite-preview';
 export async function* sendMessageStream(
   message: string,
   history: Message[] = [],
-  modelName: string = PRO_MODEL
+  modelName: string = PRO_MODEL,
+  attachments: DriveAttachment[] = []
 ): AsyncGenerator<string, void, unknown> {
   const response = await fetch('/api/chat/stream', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ message, history, modelName }),
+    body: JSON.stringify({
+      message,
+      history,
+      modelName,
+      attachments: attachments.map((att) => ({
+        id: att.id,
+        name: att.name,
+        mimeType: att.mimeType,
+        content: att.content,
+      })),
+    }),
   });
 
   if (!response.ok) {

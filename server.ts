@@ -24,7 +24,12 @@ app.get('/api/health', (req, res) => {
 
 // Chat streaming endpoint via Server-Sent Events (SSE)
 app.post('/api/chat/stream', async (req, res) => {
-  const { message, history = [], modelName = 'gemini-3.1-pro-preview' } = req.body;
+  const {
+    message,
+    history = [],
+    modelName = 'gemini-3.1-pro-preview',
+    attachments = [],
+  } = req.body;
 
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'Message is required' });
@@ -41,16 +46,32 @@ app.post('/api/chat/stream', async (req, res) => {
       parts: [{ text: String(msg.text || '') }],
     }));
 
+    let enrichedPrompt = message;
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      const attachmentSection = attachments
+        .map(
+          (att: any, idx: number) =>
+            `--- Attached Google Drive File ${idx + 1}: "${att.name || 'Document'}" (${
+              att.mimeType || 'text/plain'
+            }) ---\n${String(att.content || '').slice(0, 25000)}\n--- End of "${
+              att.name || 'Document'
+            }" ---`
+        )
+        .join('\n\n');
+
+      enrichedPrompt = `${attachmentSection}\n\nUser Question / Request:\n${message}`;
+    }
+
     const chat = ai.chats.create({
       model: modelName,
       config: {
         systemInstruction:
-          'You are a helpful, friendly AI assistant. Use Markdown for formatting. Be concise but thorough.',
+          'You are a helpful, friendly AI assistant. When Google Drive documents are attached to the prompt, analyze their contents carefully and reference them accurately in your response. Use Markdown for formatting. Be concise but thorough.',
       },
       history: formattedHistory,
     });
 
-    const streamResponse = await chat.sendMessageStream({ message });
+    const streamResponse = await chat.sendMessageStream({ message: enrichedPrompt });
 
     for await (const chunk of streamResponse) {
       const c = chunk as GenerateContentResponse;
