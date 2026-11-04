@@ -1,0 +1,69 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased;
+  }
+}
+
+/* Markdown Styles */
+.prose {
+  @apply text-zinc-800 dark:text-zinc-200 leading-relaxed;
+}
+
+.prose p {
+  @apply mb-4 last:mb-0;
+}
+
+.prose h1, .prose h2, .prose h3 {
+  @apply font-bold mt-6 mb-3 first:mt-0;
+}
+
+.prose h1 { @apply text-xl; }
+.prose h2 { @apply text-lg; }
+.prose h3 { @apply text-base; }
+
+.prose ul, .prose ol {
+  @apply pl-5 mb-4 space-y-1;
+}
+
+.prose ul { @apply list-disc; }
+.prose ol { @apply list-decimal; }
+
+.prose code {
+  @apply font-mono text-[0.9em] bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded border border-zinc-200 dark:border-zinc-700;
+}
+
+.prose pre {
+  @apply bg-zinc-900 text-zinc-100 p-4 rounded-xl overflow-x-auto mb-4 border border-zinc-800;
+}
+
+.prose pre code {
+  @apply bg-transparent p-0 border-none text-inherit;
+}
+
+.prose blockquote {
+  @apply pl-4 border-l-4 border-emerald-500 italic text-zinc-600 dark:text-zinc-400 mb-4;
+}
+
+.prose a {
+  @apply text-emerald-600 dark:text-emerald-400 underline underline-offset-4 hover:text-emerald-500 transition-colors;
+}
+
+.prose table {
+  @apply w-full border-collapse mb-4;
+}
+
+.prose th, .prose td {
+  @apply border border-zinc-200 dark:border-zinc-800 p-2 text-left;
+}
+
+.prose th {
+  @apply bg-zinc-50 dark:bg-zinc-800 font-semibold;
+}
